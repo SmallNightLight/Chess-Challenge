@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using static ChessChallenge.Application.Settings;
 using static ChessChallenge.Application.ConsoleHelper;
+using Chess_Challenge.src.Evil_Bot;
 
 namespace ChessChallenge.Application
 {
