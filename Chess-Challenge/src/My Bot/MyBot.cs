@@ -139,11 +139,7 @@ public class MyBot : IChessBot
         -27, -11,   4,  13,  14,   4,  -5, -17,
         -53, -34, -21, -11, -28, -14, -24, -43
     };
-    //Use deciamls - -> max
-    //use 12 maps (each piece, early + late)
-    //use 8bits per value per quare: 2 decimals per map
-    //32 squares per map //symmetry
-    //-> 12 maps * 2 decimals * 2 tokens = 48 tokens
+   
 
 
 

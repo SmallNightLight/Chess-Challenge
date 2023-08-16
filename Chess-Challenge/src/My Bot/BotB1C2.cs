@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
-public class BotB1C : IChessBot
+public class BotB1C2 : IChessBot
 {
     //Weights
 
@@ -285,14 +285,14 @@ public class BotB1C : IChessBot
     bool _useTimeManagment = true;
     bool _useImprovedPieceValues = true;
     bool _useTranspositionTable = true; //Alpha Beta pruning needs to be true
-    bool _useOptimizedTranspositionTable = true; //Alpha Beta pruning needs to be true
+    bool _useOptimizedTranspositionTable = false; //Alpha Beta pruning needs to be true
 
     //Debugging
     int _searches;
     int _quiescenceSearches;
     int _newEntries;
 
-    public BotB1C()
+    public BotB1C2()
     {
         _iTranspositionTable = new Transposition[0x800000];
     }
@@ -384,22 +384,17 @@ public class BotB1C : IChessBot
             {
                 if (transposition.zobristHash == board.ZobristKey && transposition.depth >= depth)
                 {
-                    ////If we have an "exact" score (a < score < beta) just use that
-                    //if (transposition.flag == 1)
-                    //    return (new List<Move>(), transposition.evaluation);
+                    //If we have an "exact" score (a < score < beta) just use that
+                    if (transposition.flag == 1)
+                        return (new List<Move> { transposition.move }, transposition.evaluation);
 
-                    ////If we have a lower bound better than beta, use that
-                    //if (transposition.flag == 2 && transposition.evaluation >= beta)
-                    //    return (new List<Move>(), transposition.evaluation);
+                    //If we have a lower bound better than beta, use that
+                    if (transposition.flag == 2 && transposition.evaluation >= beta)
+                        return (new List<Move> { transposition.move }, transposition.evaluation);
 
-                    ////If we have an upper bound worse than alpha, use that
-                    //if (transposition.flag == 3 && transposition.evaluation <= alpha)
-                    //    return (new List<Move>(), transposition.evaluation);
-
-                    if (currentEvaluation >= beta && transposition.evaluation >= beta)
-                        return (new List<Move>(), transposition.evaluation); //Beta cut-off
-                    if (currentEvaluation <= alpha && transposition.evaluation <= alpha)
-                        return (new List<Move>(), transposition.evaluation); //Alpha cut-off
+                    //If we have an upper bound worse than alpha, use that
+                    if (transposition.flag == 3 && transposition.evaluation <= alpha)
+                        return (new List<Move> { transposition.move }, transposition.evaluation);
                 }
                 else if (transposition.zobristHash == board.ZobristKey)
                 {
