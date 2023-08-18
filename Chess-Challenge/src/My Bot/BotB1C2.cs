@@ -320,7 +320,7 @@ public class BotB1C2 : IChessBot
                 float totalTime = timer.GameStartTimeMilliseconds;
 
                 float factor = 0.4f + (0.06f * openingsMoves);
-                float timePerMove = totalTime / 60f;
+                float timePerMove = totalTime / 80f;
                 _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, factor * timePerMove);
             }
             else
@@ -354,7 +354,7 @@ public class BotB1C2 : IChessBot
             bestMove = bestMoveLine[0];
         }
         
-        Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, " + " with searches: " + _searches + " and quiescnceSearhces: "  + _quiescenceSearches + " and new entries: " + _newEntries);
+        Console.WriteLine("BotB1C2 finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, " + " with searches: " + _searches + " and quiescnceSearhces: "  + _quiescenceSearches + " and new entries: " + _newEntries);
         return bestMove;
     }
 

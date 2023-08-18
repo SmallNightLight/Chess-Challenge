@@ -10,8 +10,12 @@ namespace ChessChallenge.Example
         // Piece values: null, pawn, knight, bishop, rook, queen, king
         int[] pieceValues = { 0, 100, 300, 300, 500, 900, 10000 };
 
+        int _usedTime = 0;
+
         public Move Think(Board board, Timer timer)
         {
+            Console.WriteLine("Start Thinking: " + timer.MillisecondsRemaining);
+
             Move[] allMoves = board.GetLegalMoves();
 
             // Pick a random move to play if nothing better is found
@@ -39,6 +43,8 @@ namespace ChessChallenge.Example
                 }
             }
 
+            _usedTime += timer.MillisecondsElapsedThisTurn;
+            Console.WriteLine("End Thinking: " + timer.MillisecondsRemaining + ", total used time: " + _usedTime);
             return moveToPlay;
         }
 

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using ChessChallenge.API;
 using System.Linq;
+using ChessChallenge.Example;
 
 public class MyBot : IChessBot
 {

@@ -1,6 +1,8 @@
 ﻿using ChessChallenge.API;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Numerics;
 
@@ -262,8 +264,6 @@ public class BotB1C : IChessBot
 
     private Dictionary<ulong, (byte, short)> _transpositionTable = new Dictionary<ulong, (byte, short)>();
 
-    private const byte INVALID = 0, EXACT = 1, LOWERBOUND = 2, UPPERBOUND = 3;
-
     //14 bytes per entry, likely will align to 16 bytes due to padding (if it aligns to 32, recalculate max TP table size)
     public struct Transposition
     {
@@ -276,6 +276,9 @@ public class BotB1C : IChessBot
 
     private Transposition[] _iTranspositionTable;
 
+
+    private (ulong, short, sbyte)[] _iiTranspositionTable = new(ulong, short, sbyte)[0x800000];
+
     //Systems
     bool _useMoveEvaluation = true;
     bool _useAlphaBetaPruning = true;
@@ -285,7 +288,8 @@ public class BotB1C : IChessBot
     bool _useTimeManagment = true;
     bool _useImprovedPieceValues = true;
     bool _useTranspositionTable = true; //Alpha Beta pruning needs to be true
-    bool _useOptimizedTranspositionTable = true; //Alpha Beta pruning needs to be true
+    bool _useOptimizedTranspositionTable = false; //Alpha Beta pruning needs to be true
+    bool _useOptimizedTranspositionTable2 = true; //Alpha Beta pruning needs to be true
 
     //Debugging
     int _searches;
@@ -295,6 +299,8 @@ public class BotB1C : IChessBot
     public BotB1C()
     {
         _iTranspositionTable = new Transposition[0x800000];
+        var v = CompressMap(_iKingPositionValueL);
+        Console.WriteLine();
     }
 
     public Move Think(Board board, Timer timer)
@@ -319,14 +325,16 @@ public class BotB1C : IChessBot
                 float openingsMoves = Math.Min(board.PlyCount, 15);
                 float totalTime = timer.GameStartTimeMilliseconds;
 
-                float factor = 0.4f + (0.06f * openingsMoves);
-                float timePerMove = totalTime / 60f;
+                float factor = 0.6f + (0.04f * openingsMoves);
+                float timePerMove = totalTime / 80f;
                 _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, factor * timePerMove);
             }
             else
             {
                 _timeThisTurn = timer.GameStartTimeMilliseconds / 60f;
             }
+
+            Console.WriteLine("Time this turn: " + _timeThisTurn  + "   Time left: " + timer.MillisecondsRemaining);
 
             List<Move> bestMoveLine;
 
@@ -353,8 +361,9 @@ public class BotB1C : IChessBot
             List<Move> bestMoveLine = Search(board, _minimumDepth, _useMoveEvaluation ? EvaluateBoard(board) : 0, -10000, 10000, bestMove, false, new HashSet<Square>(), _quiescenceDepth).Item1;
             bestMove = bestMoveLine[0];
         }
-        
-        Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, " + " with searches: " + _searches + " and quiescnceSearhces: "  + _quiescenceSearches + " and new entries: " + _newEntries);
+
+        Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, time left: " + timer.MillisecondsRemaining);
+        //Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, " + " with searches: " + _searches + " and quiescnceSearhces: "  + _quiescenceSearches + " and new entries: " + _newEntries);
         return bestMove;
     }
 
@@ -373,7 +382,9 @@ public class BotB1C : IChessBot
         ref Transposition transposition = ref _iTranspositionTable[board.ZobristKey & 0x7FFFFF];
         int startingAlpha = alpha;
 
-        List<Move> interestingMoves = new List<Move> ();
+        ref var iTransposition = ref _iiTranspositionTable[board.ZobristKey & 0x7FFFFF];
+
+        List<Move> interestingMoves = new List<Move>();
 
         if (pvMove != Move.NullMove)
             interestingMoves.Add(pvMove);
@@ -386,25 +397,37 @@ public class BotB1C : IChessBot
                 {
                     ////If we have an "exact" score (a < score < beta) just use that
                     //if (transposition.flag == 1)
-                    //    return (new List<Move>(), transposition.evaluation);
+                    //    //return (new List<Move> { transposition.move }, transposition.evaluation);
 
                     ////If we have a lower bound better than beta, use that
                     //if (transposition.flag == 2 && transposition.evaluation >= beta)
-                    //    return (new List<Move>(), transposition.evaluation);
+                    //    return (new List<Move> { transposition.move }, transposition.evaluation);
 
                     ////If we have an upper bound worse than alpha, use that
                     //if (transposition.flag == 3 && transposition.evaluation <= alpha)
-                    //    return (new List<Move>(), transposition.evaluation);
+                    //    return (new List<Move> { transposition.move}, transposition.evaluation);
 
                     if (currentEvaluation >= beta && transposition.evaluation >= beta)
                         return (new List<Move>(), transposition.evaluation); //Beta cut-off
                     if (currentEvaluation <= alpha && transposition.evaluation <= alpha)
                         return (new List<Move>(), transposition.evaluation); //Alpha cut-off
                 }
-                else if (transposition.zobristHash == board.ZobristKey)
+                
+                if (transposition.zobristHash == board.ZobristKey)
                 {
-                    interestingMoves.Add (transposition.move);
-                } 
+                    if (!interestingMoves.Contains(transposition.move))
+                        interestingMoves.Add(transposition.move);
+                }
+            }
+            else if (_useOptimizedTranspositionTable2)
+            {
+                if (iTransposition.Item1 == board.ZobristKey && iTransposition.Item3 >= depth)
+                {
+                    if (currentEvaluation >= beta && iTransposition.Item2 >= beta)
+                        return (new List<Move>(), iTransposition.Item2); //Beta cut-off
+                    if (currentEvaluation <= alpha && iTransposition.Item2 <= alpha)
+                        return (new List<Move>(), iTransposition.Item2); //Alpha cut-off
+                }
             }
             else if (_transpositionTable.TryGetValue(board.ZobristKey, out var storedEntry) && storedEntry.Item1 >= depth)
             {
@@ -516,6 +539,10 @@ public class BotB1C : IChessBot
                 }
                 else transposition.flag = 1; //"exact" score
                 transposition.depth = (sbyte)depth;
+            }
+            else if (_useOptimizedTranspositionTable2)
+            {
+                iTransposition = (board.ZobristKey, (short)bestEvaluation, (sbyte)depth);
             }
             else
             {
@@ -654,56 +681,44 @@ public class BotB1C : IChessBot
         return (phase * 256 + (totalPhase / 2)) / totalPhase;
     }
 
+    /// <summary>
+    /// Do -128 in evaluation
+    /// </summary>
     private decimal CompressMap(int[] map)
     {
-        byte[] result = new byte[16];
-        ulong combinedUlong = 0;
-        
+        for (int i = 0; i < map.Length; i++)
+            map[i] = Math.Max(0, Math.Min(256, map[i] + 128));
 
-        for (int i = 0; i < 16; i++)
-        {
-            byte combinedByte = (byte)Math.Max(0, Math.Min(255, map[i] + 128)); // Make sure the value is in the range 0 to 255
-            result[i] = combinedByte;
-            combinedUlong = (combinedUlong << 8) | combinedByte;
-        }
-        //CombineBytesToDecimal(result);
+        ulong[] combinedUlong = new ulong[8];
 
-        // Replace the following byte array with your 128 bits of data
-        byte[] bytes = new byte[16]
+        for (int i = 63, u = 8; i >= 0; i--)
         {
-            0x01, 0x23, 0x45, 0x67,
-            0x89, 0xAB, 0xCD, 0xEF,
-            0x12, 0x34, 0x56, 0x78,
-            0x9A, 0xBC, 0xDE, 0xF0
-        };
+            if ((i + 1) % 8 == 0)
+                u--;
 
-        if (bytes.Length != 16)
-        {
-            Console.WriteLine("Error: Byte array should contain exactly 16 bytes.");
+            combinedUlong[u] = (combinedUlong[u] << 8) | (byte)map[i];
         }
 
-        int[] bytesss = decimal.GetBits(f);
-        int[] bytessss = decimal.GetBits(g);
-
-        byte[] bitArray = BitConverter.GetBytes(bytesss[3]);
-
-        // Convert the first 8 bytes to ulong (64-bit integer)
-        ulong firstPart = BitConverter.ToUInt64(bytes, 0);
-
-        // Convert the next 8 bytes to ulong (64-bit integer)
-        ulong secondPart = BitConverter.ToUInt64(bytes, 8);
-
-        // Combine the two ulongs into a BigInteger
-        BigInteger combinedBigInt = new BigInteger(firstPart) << 64 | secondPart;
-
-        // Convert the BigInteger to a decimal
-        decimal combinedDecimal = (decimal)combinedBigInt;
-
-        Console.WriteLine($"Combined Decimal: {combinedDecimal}");
+        //12 Tables
+        //ULONG 64 squares: 8 * 12 * 2 = 192 tokens
+        //DECIMAL 32 squares: 32 * 2 = 64 tokens
+        //ULONG 32 squares: 48 * 2 = 96 tokens
 
 
 
-        return new decimal((int)(combinedUlong & 0xFFFFFFFF), (int)(combinedUlong >> 32), 0, false, 0);
+        byte[] byteArrayRev = BitConverter.GetBytes(combinedUlong[0]);
+
+        //Concatenate the bytes of the other ulongs to the byteArrayRev
+        for (int i = 1; i < combinedUlong.Length; i++)
+            byteArrayRev = byteArrayRev.Concat(BitConverter.GetBytes(combinedUlong[i])).ToArray();
+
+
+        BigInteger b3 = new BigInteger(combinedUlong[0]);
+
+
+
+
+        return new decimal((int)(combinedUlong[0] & 0xFFFFFFFF), (int)(combinedUlong[0] >> 32), 0, false, 0);
     }
 
     decimal f = -12345667890843.092472905745012m;

@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-public class Bot7
+public class Bot7 : IChessBot
 {
     public Move Think(Board board, Timer timer)
     {
