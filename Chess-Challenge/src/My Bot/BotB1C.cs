@@ -1,8 +1,8 @@
 ﻿using ChessChallenge.API;
+using Raylib_cs;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Numerics;
 
@@ -290,17 +290,40 @@ public class BotB1C : IChessBot
     bool _useTranspositionTable = true; //Alpha Beta pruning needs to be true
     bool _useOptimizedTranspositionTable = false; //Alpha Beta pruning needs to be true
     bool _useOptimizedTranspositionTable2 = true; //Alpha Beta pruning needs to be true
+    bool _useLiteBlue = true;
 
     //Debugging
     int _searches;
     int _quiescenceSearches;
     int _newEntries;
 
+
+    private readonly short[] pvm = { 82, 337, 365, 477, 1025, 20000, // Middlegame
+                                     94, 281, 297, 512, 936, 20000};
+
+    private readonly decimal[] PackedPestoTables = {
+        63746705523041458768562654720m, 71818693703096985528394040064m, 75532537544690978830456252672m, 75536154932036771593352371712m, 76774085526445040292133284352m, 3110608541636285947269332480m, 936945638387574698250991104m, 75531285965747665584902616832m,
+        77047302762000299964198997571m, 3730792265775293618620982364m, 3121489077029470166123295018m, 3747712412930601838683035969m, 3763381335243474116535455791m, 8067176012614548496052660822m, 4977175895537975520060507415m, 2475894077091727551177487608m,
+        2458978764687427073924784380m, 3718684080556872886692423941m, 4959037324412353051075877138m, 3135972447545098299460234261m, 4371494653131335197311645996m, 9624249097030609585804826662m, 9301461106541282841985626641m, 2793818196182115168911564530m,
+        77683174186957799541255830262m, 4660418590176711545920359433m, 4971145620211324499469864196m, 5608211711321183125202150414m, 5617883191736004891949734160m, 7150801075091790966455611144m, 5619082524459738931006868492m, 649197923531967450704711664m,
+        75809334407291469990832437230m, 78322691297526401047122740223m, 4348529951871323093202439165m, 4990460191572192980035045640m, 5597312470813537077508379404m, 4980755617409140165251173636m, 1890741055734852330174483975m, 76772801025035254361275759599m,
+        75502243563200070682362835182m, 78896921543467230670583692029m, 2489164206166677455700101373m, 4338830174078735659125311481m, 4960199192571758553533648130m, 3420013420025511569771334658m, 1557077491473974933188251927m, 77376040767919248347203368440m,
+        73949978050619586491881614568m, 77043619187199676893167803647m, 1212557245150259869494540530m, 3081561358716686153294085872m, 3392217589357453836837847030m, 1219782446916489227407330320m, 78580145051212187267589731866m, 75798434925965430405537592305m,
+        68369566912511282590874449920m, 72396532057599326246617936384m, 75186737388538008131054524416m, 77027917484951889231108827392m, 73655004947793353634062267392m, 76417372019396591550492896512m, 74568981255592060493492515584m, 70529879645288096380279255040m,
+    };
+
+    private readonly int[][] UnpackedPestoTables = new int[64][];
+
     public BotB1C()
     {
         _iTranspositionTable = new Transposition[0x800000];
-        var v = CompressMap(_iKingPositionValueL);
-        Console.WriteLine();
+
+
+        UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
+        {
+            int pieceType = 0;
+            return decimal.GetBits(packedTable).Take(3).SelectMany(c => BitConverter.GetBytes(c).Select(square => (int)((sbyte)square * 1.461) + pvm[pieceType++])).ToArray();
+        }).ToArray();
     }
 
     public Move Think(Board board, Timer timer)
@@ -593,7 +616,11 @@ public class BotB1C : IChessBot
     {
         int index = isWhite ? square.Index ^56 : square.Index;
 
-        if (_useImprovedPieceValues)
+        if (_useLiteBlue)
+        {
+            return ((UnpackedPestoTables[index][(int)pieceType - 1] * (256 - _gamePhase)) + (UnpackedPestoTables[index][(int)pieceType + 6 - 1] * _gamePhase)) / 256;
+        }
+        else if (_useImprovedPieceValues)
         {
             switch (pieceType)
             {
@@ -684,20 +711,43 @@ public class BotB1C : IChessBot
     /// <summary>
     /// Do -128 in evaluation
     /// </summary>
-    private decimal CompressMap(int[] map)
+    private decimal[] CompressMap(int[] map)
     {
+        byte[] array = new byte[32];
+        decimal[] result = new decimal[6];
+
         for (int i = 0; i < map.Length; i++)
-            map[i] = Math.Max(0, Math.Min(256, map[i] + 128));
+            array[i] = (byte)Math.Max(0, Math.Min(256, map[i] + 128));
+
+
+        BigInteger b = new BigInteger(array);
+        //decimal[] d = BigIntegerToDecimalArray(string.Concat(array.Select(b => $"{b:X2}")));
+
+        //for (int i = 0, currentValue = 0; i < 32; i++)
+        //{
+        //    int mod = 4 - (currentValue % 4);
+        //    Console.WriteLine($"{i}: {currentValue} and {currentValue + 4 - mod}");
+        //    currentValue += (i % 4 == 3) ? 5 : 1;
+        //}
+        //
+        //
+        //for (int i = 0; i < 32; i++)
+        //{
+        //    array[i] = (byte)Math.Max(0, Math.Min(256, map[i] + 128));
+        //    array2[i + (i % 4)] = (byte)Math.Max(0, Math.Min(256, map[i] + 128));
+        //}
+
+        string hexString = string.Concat(array.Select(b => $"{b:X2}"));
 
         ulong[] combinedUlong = new ulong[8];
-
-        for (int i = 63, u = 8; i >= 0; i--)
-        {
-            if ((i + 1) % 8 == 0)
-                u--;
-
-            combinedUlong[u] = (combinedUlong[u] << 8) | (byte)map[i];
-        }
+        
+        //for (int i = 63, u = 8; i >= 0; i--)
+        //{
+        //    if ((i + 1) % 8 == 0)
+        //        u--;
+        //
+        //    combinedUlong[u] = (combinedUlong[u] << 8) | (byte)map[i];
+        //}
 
         //12 Tables
         //ULONG 64 squares: 8 * 12 * 2 = 192 tokens
@@ -706,21 +756,36 @@ public class BotB1C : IChessBot
 
 
 
-        byte[] byteArrayRev = BitConverter.GetBytes(combinedUlong[0]);
+        //string endString = "";
+        //string totalString = string.Concat(map);
+        //
+        //for (int j = 0; j < 384; j += 4)
+        //    endString += totalString.Substring(j, 4) + new string(totalString.Substring(j, 4).Reverse().ToArray());
+
+
+        byte[] byteArrayRev = BitConverter.GetBytes(map[0]);
 
         //Concatenate the bytes of the other ulongs to the byteArrayRev
-        for (int i = 1; i < combinedUlong.Length; i++)
-            byteArrayRev = byteArrayRev.Concat(BitConverter.GetBytes(combinedUlong[i])).ToArray();
+        for (int i = 1; i < map.Length; i++)
+            byteArrayRev = byteArrayRev.Concat(BitConverter.GetBytes(map[i])).ToArray();
 
 
         BigInteger b3 = new BigInteger(combinedUlong[0]);
 
 
 
-
-        return new decimal((int)(combinedUlong[0] & 0xFFFFFFFF), (int)(combinedUlong[0] >> 32), 0, false, 0);
+        return result;
+        //return new decimal((int)(combinedUlong[0] & 0xFFFFFFFF), (int)(combinedUlong[0] >> 32), 0, false, 0);
     }
 
-    decimal f = -12345667890843.092472905745012m;
-    decimal g = 1234566789084309275890.2905745012m;
+    //private decimal[] BigIntegerToDecimalArray(string strin)
+    //{
+    //    decimal[] decimals = new decimal[6];
+    //    decimals[0] = strin.ToString().Substring(0, 32);
+    //}
+
+    //private int[] DecodeDecimals(decimal[] data)
+    //{
+    //    string hexString = string.Concat(array.Select(b => $"{b:X2}"));
+    //}
 }
