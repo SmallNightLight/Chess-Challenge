@@ -6,19 +6,14 @@ using System.Numerics;
 
 public class MyBot : IChessBot
 {
-    private int _drawTreshhold = -100;
-    private int _minimumDepth = 5;
-    private int _maximumDepth = 9;
-    private int _quiescenceDepth = 3;
-
     //Other Variables
     private Timer _timer;
     private float _timeThisTurn;
 
-    private (ulong, short, sbyte)[] _iiTranspositionTable = new (ulong, short, sbyte)[0x800000];
+    private (ulong, short, sbyte)[] _transpositionTable = new (ulong, short, sbyte)[0x800000];
 
-    private readonly short[] pvm = { 82, 337, 365, 477, 1025, 20000, // Middlegame
-                                     94, 281, 297, 512, 936, 20000}; //Endgame
+    //Value of pieces (early game -> end game)
+    private readonly short[] _pieceValues = { 82, 337, 365, 477, 1025, 20000, 94, 281, 297, 512, 936, 20000};
 
     private readonly decimal[] PackedPestoTables = {
         63746705523041458768562654720m, 71818693703096985528394040064m, 75532537544690978830456252672m, 75536154932036771593352371712m, 76774085526445040292133284352m, 3110608541636285947269332480m, 936945638387574698250991104m, 75531285965747665584902616832m,
@@ -38,7 +33,7 @@ public class MyBot : IChessBot
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
             int pieceType = 0;
-            return decimal.GetBits(packedTable).Take(3).SelectMany(c => BitConverter.GetBytes(c).Select(square => (int)((sbyte)square * 1.461) + pvm[pieceType++])).ToArray();
+            return decimal.GetBits(packedTable).Take(3).SelectMany(c => BitConverter.GetBytes(c).Select(square => (int)((sbyte)square * 1.461) + _pieceValues[pieceType++])).ToArray();
         }).ToArray();
     }
 
@@ -47,11 +42,11 @@ public class MyBot : IChessBot
         _timer = timer;
         Move bestMove = Move.NullMove;
 
-        _timeThisTurn = 1000000; // Math.Min(timer.MillisecondsRemaining / 25, (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
+        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
 
         for (int depth = 1; depth <= 9; depth++)
         {
-            (Move move, int evaluation) = Search(board, depth, -10000, 10000, bestMove, false, new HashSet<Square>(), _quiescenceDepth);
+            (Move move, int evaluation) = Search(board, depth, -10000, 10000, bestMove, false, new HashSet<Square>(), 3);
 
             if (evaluation > 10000 && bestMove != Move.NullMove)
             {
@@ -70,6 +65,8 @@ public class MyBot : IChessBot
         return bestMove;
     }
 
+    int[] pieceValues = { 0, 100, 300, 300, 500, 900, 9999 };
+
     private (Move, int) Search(Board board, int depth, int alpha, int beta, Move pvMove, bool quiescenceSearch, HashSet<Square> capturePieces, int quiescenceDepth)
     {
         int currentEvaluation = Eval(board);
@@ -78,7 +75,7 @@ public class MyBot : IChessBot
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || (!quiescenceSearch && depth == 0) || (quiescenceSearch && (quiescenceDepth == 0 || capturePieces.Count() == 0)))
             return (Move.NullMove, currentEvaluation);
 
-        ref var iTransposition = ref _iiTranspositionTable[board.ZobristKey & 0x7FFFFF];
+        ref var iTransposition = ref _transpositionTable[board.ZobristKey & 0x7FFFFF];
 
         List<Move> interestingMoves = new List<Move>();
 
@@ -98,7 +95,8 @@ public class MyBot : IChessBot
 
         var moves = quiescenceSearch ? board.GetLegalMoves(true).Where(move => capturePieces.Contains(move.TargetSquare)).ToArray() : board.GetLegalMoves();
 
-        moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => 0).ToArray(); //EvaluateMove(board)
+        //moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => 0).ToArray(); //EvaluateMove(board)
+        moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => pieceValues[(int)move.CapturePieceType]).ToArray(); //EvaluateMove(board)
 
         foreach (Move move in moves)
         {
@@ -113,8 +111,6 @@ public class MyBot : IChessBot
                 break;
             }
 
-            int evaluation;
-
             //Update the capture Pieces list
             if (capturePieces.Contains(move.StartSquare))
                 capturePieces.Remove(move.StartSquare);
@@ -124,15 +120,7 @@ public class MyBot : IChessBot
             if (move.IsCapture)
                 updatedCapturePieces.Add(move.TargetSquare);
 
-            //Ckeck for a draw
-            if (board.IsDraw())
-                evaluation = _drawTreshhold;
-            else
-            {
-                //Do a new Search
-                (bestMove, evaluation) = Search(board, quiescenceSearch ? depth : depth - 1, -beta, -alpha, Move.NullMove, depth == 1 || quiescenceSearch, updatedCapturePieces, quiescenceDepth - (quiescenceSearch ? 1 : 0));
-                evaluation *= -1;
-            }
+            int evaluation = board.IsDraw() ? -100 : -Search(board, quiescenceSearch ? depth : depth - 1, -beta, -alpha, Move.NullMove, depth == 1 || quiescenceSearch, updatedCapturePieces, quiescenceDepth - (quiescenceSearch ? 1 : 0)).Item2;
 
             board.UndoMove(move);
 
