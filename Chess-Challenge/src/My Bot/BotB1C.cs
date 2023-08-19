@@ -290,7 +290,7 @@ public class BotB1C : IChessBot
     bool _useTranspositionTable = true; //Alpha Beta pruning needs to be true
     bool _useOptimizedTranspositionTable = false; //Alpha Beta pruning needs to be true
     bool _useOptimizedTranspositionTable2 = true; //Alpha Beta pruning needs to be true
-    bool _useLiteBlue = true;
+    bool _useLiteBlue = false;
 
     //Debugging
     int _searches;

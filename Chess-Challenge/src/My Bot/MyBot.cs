@@ -6,6 +6,12 @@ using System.Numerics;
 
 public class MyBot : IChessBot
 {
+    //Temp variables
+    private Board _board;
+
+    private Move _mainMove;
+    private Move _rootMove;
+
     //Other Variables
     private Timer _timer;
     private float _timeThisTurn;
@@ -14,6 +20,8 @@ public class MyBot : IChessBot
 
     //Value of pieces (early game -> end game)
     private readonly short[] _pieceValues = { 82, 337, 365, 477, 1025, 20000, 94, 281, 297, 512, 936, 20000};
+
+    private int[] _pieceWeight = { 0, 1, 1, 2, 4, 0 };
 
     private readonly decimal[] PackedPestoTables = {
         63746705523041458768562654720m, 71818693703096985528394040064m, 75532537544690978830456252672m, 75536154932036771593352371712m, 76774085526445040292133284352m, 3110608541636285947269332480m, 936945638387574698250991104m, 75531285965747665584902616832m,
@@ -39,77 +47,67 @@ public class MyBot : IChessBot
 
     public Move Think(Board board, Timer timer)
     {
+        _board = board;
         _timer = timer;
-        Move bestMove = Move.NullMove;
 
         _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
 
         for (int depth = 1; depth <= 9; depth++)
         {
-            (Move move, int evaluation) = Search(board, depth, -10000, 10000, bestMove, false, new HashSet<Square>(), 3);
+             int evaluation = Search(0, depth, -10000, 10000, _rootMove, false, new HashSet<Square>(), 3);
 
-            if (evaluation > 10000 && bestMove != Move.NullMove)
+            if (evaluation > 100000)
             {
-                bestMove = move;
+                _rootMove = _mainMove;
                 break;
             }
 
             if (timer.MillisecondsElapsedThisTurn < _timeThisTurn)
-                bestMove = move;
+                _rootMove = _mainMove;
             else
                 break;
         }
 
         //Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, time left: " + timer.MillisecondsRemaining);
 
-        return bestMove;
+        return _rootMove;
     }
 
     int[] pieceValues = { 0, 100, 300, 300, 500, 900, 9999 };
 
-    private (Move, int) Search(Board board, int depth, int alpha, int beta, Move pvMove, bool quiescenceSearch, HashSet<Square> capturePieces, int quiescenceDepth)
+    private int Search(int ply, int depth, int alpha, int beta, Move pvMove, bool quiescenceSearch, HashSet<Square> capturePieces, int quiescenceDepth)
     {
-        int currentEvaluation = Eval(board);
+        int currentEvaluation = Eval();
 
         //Check for depth and time
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || (!quiescenceSearch && depth == 0) || (quiescenceSearch && (quiescenceDepth == 0 || capturePieces.Count() == 0)))
-            return (Move.NullMove, currentEvaluation);
+            return currentEvaluation;
 
-        ref var iTransposition = ref _transpositionTable[board.ZobristKey & 0x7FFFFF];
+        if (ply != 0 && _board.IsRepeatedPosition()) 
+            return -100;
+
+        ref var transposition = ref _transpositionTable[_board.ZobristKey & 0x7FFFFF];
 
         List<Move> interestingMoves = new List<Move>();
+        bool inCheck = _board.IsInCheck();
 
         if (pvMove != Move.NullMove)
             interestingMoves.Add(pvMove);
 
-        if (iTransposition.Item1 == board.ZobristKey && iTransposition.Item3 >= depth)
-        {
-            if (currentEvaluation >= beta && iTransposition.Item2 >= beta)
-                return (Move.NullMove, iTransposition.Item2); //Beta cut-off
-            if (currentEvaluation <= alpha && iTransposition.Item2 <= alpha)
-                return (Move.NullMove, iTransposition.Item2); //Alpha cut-off
-        }
+        if (transposition.Item1 == _board.ZobristKey && transposition.Item3 >= depth && ((currentEvaluation >= beta && transposition.Item2 >= beta) || (currentEvaluation <= alpha && transposition.Item2 <= alpha)))
+            return transposition.Item2; //Alpha or Beta cut-off
 
         Move bestMove = Move.NullMove;
         int bestEvaluation = int.MinValue;
 
-        var moves = quiescenceSearch ? board.GetLegalMoves(true).Where(move => capturePieces.Contains(move.TargetSquare)).ToArray() : board.GetLegalMoves();
+        var moves = quiescenceSearch ? _board.GetLegalMoves(true).Where(move => capturePieces.Contains(move.TargetSquare)).ToArray() : _board.GetLegalMoves();
 
         //moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => 0).ToArray(); //EvaluateMove(board)
         moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => pieceValues[(int)move.CapturePieceType]).ToArray(); //EvaluateMove(board)
 
         foreach (Move move in moves)
         {
-            board.MakeMove(move);
-
-            //Check for a checkmate
-            if (board.IsInCheckmate())
-            {
-                board.UndoMove(move);
-                bestMove = move;
-                bestEvaluation = 10001;
-                break;
-            }
+            _board.MakeMove(move);
 
             //Update the capture Pieces list
             if (capturePieces.Contains(move.StartSquare))
@@ -120,17 +118,22 @@ public class MyBot : IChessBot
             if (move.IsCapture)
                 updatedCapturePieces.Add(move.TargetSquare);
 
-            int evaluation = board.IsDraw() ? -100 : -Search(board, quiescenceSearch ? depth : depth - 1, -beta, -alpha, Move.NullMove, depth == 1 || quiescenceSearch, updatedCapturePieces, quiescenceDepth - (quiescenceSearch ? 1 : 0)).Item2;
+            //_board.IsDraw() ? -100 : 
+            int evaluation = -Search(ply + 1, quiescenceSearch ? depth : depth - 1, -beta, -alpha, Move.NullMove, depth == 1 || quiescenceSearch, updatedCapturePieces, quiescenceDepth - (quiescenceSearch ? 1 : 0));
 
-            board.UndoMove(move);
+            _board.UndoMove(move);
 
             //Set best move
             if (evaluation > bestEvaluation)
             {
                 bestMove = move;
                 bestEvaluation = evaluation;
+
+                if (ply == 0)
+                    _mainMove = move;
             }
 
+            //into above?
             //Set alpha
             alpha = Math.Max(alpha, bestEvaluation);
 
@@ -139,24 +142,24 @@ public class MyBot : IChessBot
                 break;
         }
 
+        if (!quiescenceSearch && moves.Length == 0) return inCheck ? ply - 100000 : 0;
+
         if (!quiescenceSearch)
-            iTransposition = (board.ZobristKey, (short)bestEvaluation, (sbyte)depth);
+            transposition = (_board.ZobristKey, (short)bestEvaluation, (sbyte)depth);
 
         if (quiescenceSearch && bestMove == Move.NullMove)
-            return (Move.NullMove, bestEvaluation != int.MinValue ? bestEvaluation : currentEvaluation);
+            return bestEvaluation != int.MinValue ? bestEvaluation : currentEvaluation;
         
-        return (bestMove, bestEvaluation);
+        return bestEvaluation;
     }
 
-    readonly int[] _pieceWeight = { 0, 1, 1, 2, 4, 0 };
-
-    private int Eval(Board board)
+    private int Eval()
     {
         int middlegame = 0, endgame = 0, gamephase = 0, sideToMove = 2;
         for (; --sideToMove >= 0;)
         {
             for (int piece = -1, square; ++piece < 6;)
-                for (ulong mask = board.GetPieceBitboard((PieceType)piece + 1, sideToMove > 0); mask != 0;)
+                for (ulong mask = _board.GetPieceBitboard((PieceType)piece + 1, sideToMove > 0); mask != 0;)
                 {
                     // Gamephase, middlegame -> endgame
                     gamephase += _pieceWeight[piece];
@@ -169,6 +172,6 @@ public class MyBot : IChessBot
             middlegame = -middlegame;
             endgame = -endgame;
         }
-        return (middlegame * gamephase + endgame * (24 - gamephase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
+        return (middlegame * gamephase + endgame * (24 - gamephase)) / 24 * (_board.IsWhiteToMove ? 1 : -1);
     }
 }
