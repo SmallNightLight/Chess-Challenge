@@ -6,9 +6,6 @@ using System.Numerics;
 
 public class MyBot : IChessBot
 {
-    //Temp so
-    private bool _useNullMove = true;
-
     //Temp variables
     private Board _board;
 
@@ -19,7 +16,8 @@ public class MyBot : IChessBot
     private Timer _timer;
     private float _timeThisTurn;
 
-    private (ulong, short, sbyte)[] _transpositionTable = new (ulong, short, sbyte)[0x800000];
+    private (ulong, short, sbyte, Move, int)[] _transpositionTable = new (ulong, short, sbyte, Move, int)[0x800000];
+    private int[,,] _historyTable;
 
     //Value of pieces (early game -> end game)
     private readonly short[] _pieceValues = { 82, 337, 365, 477, 1025, 20000, 94, 281, 297, 512, 936, 20000};
@@ -48,8 +46,12 @@ public class MyBot : IChessBot
         }).ToArray();
     }
 
+    private int _searches = 0;
+
     public Move Think(Board board, Timer timer)
     {
+        _historyTable = new int[2, 7, 64];
+
         _board = board;
         _timer = timer;
 
@@ -57,10 +59,10 @@ public class MyBot : IChessBot
         //_timeThisTurn = 1000000;
 
         int d = 0;
+
         for (int depth = 1; depth <= 9; depth++)
         {
-            
-            int evaluation = Search(0, depth, -10000, 10000, _rootMove, true);
+            int evaluation = Search(0, depth, -10000, 10000, _rootMove, false);
 
             if (evaluation > 100000)
             {
@@ -77,7 +79,8 @@ public class MyBot : IChessBot
             else
                 break;
         }
-        Console.WriteLine(d);
+
+        Console.WriteLine("Bot new: " + d + ", searches: " + _searches);
         //Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, time left: " + timer.MillisecondsRemaining);
 
         return _rootMove;
@@ -87,7 +90,9 @@ public class MyBot : IChessBot
 
     private int Search(int ply, int depth, int alpha, int beta, Move pvMove, bool canDoNullMove)
     {
-        int currentEvaluation = Eval();
+        _searches++;
+        int startAlpha = alpha;
+        int currentEvaluation = Eval(), white = _board.IsWhiteToMove ? 0 : 1;
         bool quiescenceSearch = depth <= 0;
 
         //Check for depth and time
@@ -106,8 +111,13 @@ public class MyBot : IChessBot
         if (pvMove != Move.NullMove)
             interestingMoves.Add(pvMove);
 
-        if (transposition.Item1 == _board.ZobristKey && transposition.Item3 >= depth && ((currentEvaluation >= beta && transposition.Item2 >= beta) || (currentEvaluation <= alpha && transposition.Item2 <= alpha)))
-            return transposition.Item2; //Alpha or Beta cut-off
+        //Old Transpostion
+        //if (transposition.Item1 == _board.ZobristKey && transposition.Item3 >= depth && ((currentEvaluation >= beta && transposition.Item2 >= beta) || (currentEvaluation <= alpha && transposition.Item2 <= alpha)))
+        //    return transposition.Item2; //Alpha or Beta cut-off
+
+        //New Transposition with flags
+        if (transposition.Item1 == _board.ZobristKey && ply != 0 && transposition.Item3 >= depth && (transposition.Item5 == 1 || (transposition.Item5 == 0 && transposition.Item2 <= alpha) || (transposition.Item5 == 2 && transposition.Item2 >= beta)))
+            return transposition.Item2;
 
         if (quiescenceSearch)
         {
@@ -116,24 +126,37 @@ public class MyBot : IChessBot
 
             alpha = Math.Max(alpha, currentEvaluation);
         }
+        //else if (canDoNullMove && depth > 1 && currentEvaluation >= beta && _board.PlyCount < 70)
+        //{
+        //    if (_board.TrySkipTurn())
+        //    {
+        //        int reduction = depth >= 4 ? 3 : 2; // Depth reduction
+        //        int evalAfterNullMove = -Search(ply + 1, depth - 1 - reduction, -beta, -beta + 1, Move.NullMove, false);
+        //        _board.UndoSkipTurn();
+        //
+        //        if (evalAfterNullMove >= beta)
+        //        {
+        //            return evalAfterNullMove; // Beta cutoff
+        //        }
+        //    }
+        //}
 
-        Move bestMove = Move.NullMove;
-        int bestEvaluation = int.MinValue;
-
-        //moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => 0).ToArray(); //EvaluateMove(board)
-        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => pieceValues[(int)move.CapturePieceType]).ToArray(); //EvaluateMove(board)
-
-        //if (_useNullMove && canDoNullMove)
+        //if (canDoNullMove)
         //{
         //    if (depth >= 2 && !(beta - alpha > 1) && _board.TrySkipTurn())
         //    {
         //        int score = -Search(ply + 1, depth - 3, -beta, 1 - beta, Move.NullMove, false);
         //        _board.UndoSkipTurn();
-        
+        //
         //        if (score >= beta)
         //            return score;
         //    }
         //}
+
+        Move bestMove = Move.NullMove;
+        int bestEvaluation = int.MinValue;
+
+        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
 
         foreach (Move move in moves)
         {
@@ -158,18 +181,23 @@ public class MyBot : IChessBot
 
                 //Check if can cut-off
                 if (beta <= alpha)
+                {
+                    if (!quiescenceSearch && !move.IsCapture) 
+                        _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
+
                     break;
+                }
             }
         }
 
         if (!quiescenceSearch && moves.Length == 0) 
-            return inCheck ? ply - 100000 : 0;
+            bestEvaluation = inCheck ? ply - 100000 : 0;
 
         if (!quiescenceSearch)
-            transposition = (_board.ZobristKey, (short)bestEvaluation, (sbyte)depth);
+            transposition = (_board.ZobristKey, (short)bestEvaluation, (sbyte)depth, bestMove, bestEvaluation >= beta ? 2 : bestEvaluation > alpha ? 1 : 0);
 
         if (quiescenceSearch && bestMove == Move.NullMove)
-            return bestEvaluation != int.MinValue ? bestEvaluation : currentEvaluation;
+            return currentEvaluation; 
         
         return bestEvaluation;
     }

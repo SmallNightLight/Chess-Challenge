@@ -52,22 +52,28 @@ public class BotB2S : IChessBot
 
         _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
 
+        int d = 0;
         for (int depth = 1; depth <= 9; depth++)
         {
-            int evaluation = Search(0, depth, -10000, 10000, _rootMove, new HashSet<Square>());
+
+            int evaluation = Search(0, depth, -10000, 10000, _rootMove, true);
 
             if (evaluation > 100000)
             {
                 _rootMove = _mainMove;
+                d++;
                 break;
             }
 
             if (timer.MillisecondsElapsedThisTurn < _timeThisTurn)
+            {
+                d++;
                 _rootMove = _mainMove;
+            }
             else
                 break;
         }
-
+        Console.WriteLine("Bot old: " + d);
         //Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, time left: " + timer.MillisecondsRemaining);
 
         return _rootMove;
@@ -75,17 +81,18 @@ public class BotB2S : IChessBot
 
     int[] pieceValues = { 0, 100, 300, 300, 500, 900, 9999 };
 
-    private int Search(int ply, int depth, int alpha, int beta, Move pvMove, HashSet<Square> capturePieces)
+    private int Search(int ply, int depth, int alpha, int beta, Move pvMove, bool canDoNullMove)
     {
         int currentEvaluation = Eval();
         bool quiescenceSearch = depth <= 0;
 
         //Check for depth and time
-        if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || (quiescenceSearch && capturePieces.Count() == 0) || depth <= -3)
+        if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
             return currentEvaluation;
 
         if (ply != 0 && _board.IsRepeatedPosition())
             return -100;
+
 
         ref var transposition = ref _transpositionTable[_board.ZobristKey & 0x7FFFFF];
 
@@ -98,29 +105,26 @@ public class BotB2S : IChessBot
         if (transposition.Item1 == _board.ZobristKey && transposition.Item3 >= depth && ((currentEvaluation >= beta && transposition.Item2 >= beta) || (currentEvaluation <= alpha && transposition.Item2 <= alpha)))
             return transposition.Item2; //Alpha or Beta cut-off
 
+        if (quiescenceSearch)
+        {
+            if (currentEvaluation >= beta)
+                return beta;
+
+            alpha = Math.Max(alpha, currentEvaluation);
+        }
+
         Move bestMove = Move.NullMove;
         int bestEvaluation = int.MinValue;
 
-        var moves = quiescenceSearch ? _board.GetLegalMoves(true).Where(move => capturePieces.Contains(move.TargetSquare)).ToArray() : _board.GetLegalMoves();
-
         //moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => 0).ToArray(); //EvaluateMove(board)
-        moves = moves.OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => pieceValues[(int)move.CapturePieceType]).ToArray(); //EvaluateMove(board)
+        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => interestingMoves.Contains(move)).ThenBy(move => interestingMoves.IndexOf(move)).ThenByDescending(move => pieceValues[(int)move.CapturePieceType]).ToArray(); //EvaluateMove(board)
 
         foreach (Move move in moves)
         {
             _board.MakeMove(move);
 
-            //Update the capture Pieces list
-            if (capturePieces.Contains(move.StartSquare))
-                capturePieces.Remove(move.StartSquare);
-
-            HashSet<Square> updatedCapturePieces = new HashSet<Square>(capturePieces);
-
-            if (move.IsCapture)
-                updatedCapturePieces.Add(move.TargetSquare);
-
             //_board.IsDraw() ? -100 : 
-            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, Move.NullMove, updatedCapturePieces);
+            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, Move.NullMove, canDoNullMove);
 
             _board.UndoMove(move);
 
