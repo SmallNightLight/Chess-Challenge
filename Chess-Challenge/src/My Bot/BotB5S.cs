@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
-public class BotB4S : IChessBot
+public class BotB5S : IChessBot
 {
     //Temp variables
     private Board _board;
@@ -37,7 +37,7 @@ public class BotB4S : IChessBot
 
     private readonly int[][] UnpackedPestoTables = new int[64][];
 
-    public BotB4S()
+    public BotB5S()
     {
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
@@ -54,10 +54,10 @@ public class BotB4S : IChessBot
         _timer = timer;
 
         _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
-        
+
         for (int depth = 1; depth <= 15; depth++)
         {
-            int evaluation = Search(0, depth, -10000, 10000);
+            int evaluation = Search(0, depth, -10000, 10000, false, 0);
 
             if (evaluation > 100000)
             {
@@ -74,11 +74,16 @@ public class BotB4S : IChessBot
         return _rootMove;
     }
 
-    private int Search(int ply, int depth, int alpha, int beta)
+    private int Search(int ply, int depth, int alpha, int beta, bool extend, int extensions)
     {
         if (ply != 0 && _board.IsRepeatedPosition())
             return -100;
 
+        if (extend)
+            extensions++;
+
+        if (extend && extensions < 6)
+            depth++;
 
         //Transpositions
         ref var transposition = ref _transpositionTable[_board.ZobristKey & 0x7FFFFF];
@@ -101,11 +106,12 @@ public class BotB4S : IChessBot
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
             return currentEvaluation;
 
+        bool inCheck = _board.IsInCheck();
 
         //Initialize for new searches
         Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
-        int bestEvaluation = int.MinValue;
-        bool inCheck = _board.IsInCheck();
+        int bestEvaluation = -100000000;
+
 
         //Move ordering
         var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
@@ -115,7 +121,7 @@ public class BotB4S : IChessBot
         {
             _board.MakeMove(move);
 
-            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha);
+            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, _board.IsInCheck(), extensions);
 
             _board.UndoMove(move);
 

@@ -64,7 +64,7 @@ public class MyBot : IChessBot
 
         for (int depth = 1; depth <= 15; depth++)
         {
-            int evaluation = Search(0, depth, -10000, 10000, _rootMove);
+            int evaluation = Search(0, depth, -10000, 10000, _board.IsInCheck());
 
             if (evaluation > 100000)
             {
@@ -88,21 +88,22 @@ public class MyBot : IChessBot
         return _rootMove;
     }
 
-    private int Search(int ply, int depth, int alpha, int beta, Move pvMove)
+    private int Search(int ply, int depth, int alpha, int beta, bool inCheck)
     {
         _searches++;
 
         if (ply != 0 && _board.IsRepeatedPosition())
             return -100;
 
-       
+        if (inCheck)
+            depth++;
+
         //Transpositions
         ref var transposition = ref _transpositionTable[_board.ZobristKey & 0x7FFFFF];
 
         if (transposition.Item1 == _board.ZobristKey && ply != 0 && transposition.Item3 >= depth && (transposition.Item5 == 1 || (transposition.Item5 == 0 && transposition.Item2 <= alpha) || (transposition.Item5 == 2 && transposition.Item2 >= beta)))
             return transposition.Item2;
 
-        int startAlpha = alpha;
         int currentEvaluation = Eval(), white = _board.IsWhiteToMove ? 0 : 1;
         bool quiescenceSearch = depth <= 0;
 
@@ -118,22 +119,48 @@ public class MyBot : IChessBot
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
             return currentEvaluation;
 
+        /**
+        //decide about limited razoring at the pre-pre-frontier nodes
+        int fscore = currentEvaluation + razor_margin;
+        if (!extend && (depth == 3) && (fscore <= alpha))
+        {
+            prune = true;
+            score = fmax = fscore;
+        }
+
+        //decide about extended futility pruning at pre-frontier nodes
+        fscore = currentEvaluation + extd_futil_margin;
+
+        if (!extend && (depth == 2) && (fscore <= alpha))
+        {
+            prune = true;
+            score = fmax = fscore;
+        }
+
+        //decide about selective futility pruning at frontier nodes
+        fscore = currentEvaluation + futil_margin;
+
+        if (!inCheck && (depth == 1) && (fscore <= alpha))
+        {
+            prune = true;
+            score = fmax = fscore;
+        }
+        /**/
 
         //Initialize for new searches
-        Move bestMove = Move.NullMove;
-        int bestEvaluation = int.MinValue;
-        bool inCheck = _board.IsInCheck();
+        Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
+        int bestEvaluation = -100000000;
+        
 
         //Move ordering
-        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == pvMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
+        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
 
         //Loop through all available moves
         foreach (Move move in moves)
         {
             _board.MakeMove(move);
 
-            //_board.IsDraw() ? -100 : 
-            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, Move.NullMove);
+            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, _board.IsInCheck());
 
             _board.UndoMove(move);
 
