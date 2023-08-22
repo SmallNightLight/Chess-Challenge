@@ -57,7 +57,7 @@ public class MyBot : IChessBot
         _board = board;
         _timer = timer;
 
-        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
+        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 20, timer.IncrementMilliseconds + (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
         //_timeThisTurn = 1000000;
 
         int d = 0;
@@ -88,14 +88,14 @@ public class MyBot : IChessBot
         return _rootMove;
     }
 
-    private int Search(int ply, int depth, int alpha, int beta, bool inCheck)
+    private int Search(int ply, int depth, int alpha, int beta, bool extension)
     {
         _searches++;
 
         if (ply != 0 && _board.IsRepeatedPosition())
             return -100;
 
-        if (inCheck)
+        if (extension)
             depth++;
 
         //Transpositions
@@ -118,6 +118,8 @@ public class MyBot : IChessBot
         //Check for depth and time
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
             return currentEvaluation;
+
+        bool inCheck = _board.IsInCheck();
 
         /**
         //decide about limited razoring at the pre-pre-frontier nodes
@@ -154,13 +156,14 @@ public class MyBot : IChessBot
 
         //Move ordering
         var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
+        int startAlpha = alpha;
 
         //Loop through all available moves
         foreach (Move move in moves)
         {
             _board.MakeMove(move);
-
-            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, _board.IsInCheck());
+            int rank = move.TargetSquare.Rank;
+            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, _board.IsInCheck()); //  || (move.CapturePieceType == PieceType.Pawn && (rank == 1 || rank == 6)
 
             _board.UndoMove(move);
 
@@ -191,7 +194,7 @@ public class MyBot : IChessBot
             bestEvaluation = inCheck ? ply - 100000 : -100;
 
         if (!quiescenceSearch)
-            transposition = (_board.ZobristKey, (short)bestEvaluation, (sbyte)depth, bestMove, bestEvaluation >= beta ? 2 : bestEvaluation > alpha ? 1 : 0);
+            transposition = (_board.ZobristKey, (short)bestEvaluation, (sbyte)depth, bestMove, bestEvaluation >= beta ? 2 : bestEvaluation > startAlpha ? 1 : 0);
 
         if (quiescenceSearch && bestMove == Move.NullMove)
             return currentEvaluation; 

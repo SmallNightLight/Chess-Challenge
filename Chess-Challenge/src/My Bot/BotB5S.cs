@@ -53,11 +53,11 @@ public class BotB5S : IChessBot
         _board = board;
         _timer = timer;
 
-        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
+        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 20, timer.IncrementMilliseconds + (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
 
         for (int depth = 1; depth <= 15; depth++)
         {
-            int evaluation = Search(0, depth, -10000, 10000, false, 0);
+            int evaluation = Search(0, depth, -10000, 10000, _board.IsInCheck());
 
             if (evaluation > 100000)
             {
@@ -74,15 +74,12 @@ public class BotB5S : IChessBot
         return _rootMove;
     }
 
-    private int Search(int ply, int depth, int alpha, int beta, bool extend, int extensions)
+    private int Search(int ply, int depth, int alpha, int beta, bool inCheck)
     {
         if (ply != 0 && _board.IsRepeatedPosition())
             return -100;
 
-        if (extend)
-            extensions++;
-
-        if (extend && extensions < 6)
+        if (inCheck)
             depth++;
 
         //Transpositions
@@ -106,8 +103,6 @@ public class BotB5S : IChessBot
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
             return currentEvaluation;
 
-        bool inCheck = _board.IsInCheck();
-
         //Initialize for new searches
         Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
         int bestEvaluation = -100000000;
@@ -120,8 +115,8 @@ public class BotB5S : IChessBot
         foreach (Move move in moves)
         {
             _board.MakeMove(move);
-
-            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, _board.IsInCheck(), extensions);
+            
+            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, _board.IsInCheck());
 
             _board.UndoMove(move);
 
