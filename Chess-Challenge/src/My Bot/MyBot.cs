@@ -45,6 +45,9 @@ public class MyBot : IChessBot
     }
 
     private int _searches = 0;
+    private int failedPrunes;
+    private int succedfullPrunes;
+
 
     IChessBot other = new V7();
 
@@ -52,21 +55,21 @@ public class MyBot : IChessBot
     {
         //return other.Think(board, timer);
 
-        _searches = 0;
+        _searches = failedPrunes = succedfullPrunes = 0;
 
         _historyTable = new int[2, 7, 64];
 
         _board = board;
         _timer = timer;
 
-        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 20, timer.IncrementMilliseconds + (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 80f);
+        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, timer.IncrementMilliseconds + (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 65f);
         //_timeThisTurn = 1000000;
 
         int d = 0;
 
-        for (int depth = 1; depth <= 15; depth++)
+        for (int depth = 0; ;)
         {
-            int evaluation = Search(0, depth, -10000, 10000, _board.IsInCheck());
+            int evaluation = Search(0, ++depth, -10000, 10000, _board.IsInCheck());
 
             if (evaluation > 100000)
             {
@@ -84,7 +87,7 @@ public class MyBot : IChessBot
                 break;
         }
 
-        Console.WriteLine("Bot new: " + d + ", searches: " + _searches);
+        Console.WriteLine("Bot new: " + d + ", Failed prunes: " + failedPrunes + ", succes prunes: " + succedfullPrunes + ", searches: " + _searches);
         //Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, time left: " + timer.MillisecondsRemaining);
 
         return _rootMove;
@@ -185,14 +188,34 @@ public class MyBot : IChessBot
             bool check = _board.IsInCheck();
             bool tactical = move.IsCapture || move.IsPromotion;
 
-            // Using local method to simplify multiple similar calls to Negamax
-            int Search2(int next_alpha, int R = 1) => -Search(ply + 1, depth - R, -next_alpha, -alpha, check);
+            //// Using local method to simplify multiple similar calls to Negamax
+            //int Search2(int next_alpha, int R = 1) => -Search(ply + 1, depth - R, -next_alpha, -alpha, check);
 
-            // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
-            if (i == 0 || quiescenceSearch) 
-                evaluation = Search2(beta);
-            else if ((evaluation = tactical || i < 8 || depth < 3 ? alpha + 1 : Search2(alpha + 1, 2)) > alpha && (evaluation = Search2(alpha + 1)) > alpha)
-                evaluation = Search2(beta);
+            //// PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
+            //if (i == 0 || quiescenceSearch) 
+            //    evaluation = Search2(beta);
+            //else if ((evaluation = tactical || i < 8 || depth < 3 ? alpha + 1 : Search2(alpha + 1, 2)) > alpha && (evaluation = Search2(alpha + 1)) > alpha)
+            //    evaluation = Search2(beta);
+
+
+            if (depth > 2 + (ply <= 1 ? 1 : 0) && i > 1 && !move.IsCapture && !move.IsPromotion)
+            {
+                int newDepth = Math.Clamp(depth - 2, 1, depth + 1);
+
+                evaluation = -Search(ply + 1, newDepth, -alpha - 1, -alpha, check);
+
+                if (evaluation > alpha)
+                {
+                    evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, check);
+                    failedPrunes++;
+                }
+                else
+                    succedfullPrunes++;
+            }
+            else
+            {
+                evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, check);
+            }
 
             //bool interestingMove = pvMove || move.IsCapture || move.IsPromotion || move == transpositionMove;
 
@@ -208,7 +231,7 @@ public class MyBot : IChessBot
             //    if (evaluation > alpha && evaluation < beta)
             //        evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, check, doNull);
             //}
-            
+
             //else if (depth >= 3 && !interestingMove)
             //{
             //    int r = 1;
