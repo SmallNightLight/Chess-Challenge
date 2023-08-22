@@ -16,9 +16,10 @@ public class MyBot : IChessBot
 
     private (ulong, short, sbyte, Move, int)[] _transpositionTable = new (ulong, short, sbyte, Move, int)[0x800000];
     private int[,,] _historyTable;
+    private Move[] _killerMoves = new Move[512];
 
     //Value of pieces (early game -> end game)
-    private readonly short[] _pieceValues = { 82, 337, 365, 477, 1025, 20000, 94, 281, 297, 512, 936, 20000};
+    private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000};
 
     private int[] _pieceWeight = { 0, 1, 1, 2, 4, 0 };
 
@@ -47,6 +48,7 @@ public class MyBot : IChessBot
     private int _searches = 0;
     private int failedPrunes;
     private int succedfullPrunes;
+    private int futilPrunes;
 
 
     IChessBot other = new V7();
@@ -55,7 +57,7 @@ public class MyBot : IChessBot
     {
         //return other.Think(board, timer);
 
-        _searches = failedPrunes = succedfullPrunes = 0;
+        _searches = failedPrunes = succedfullPrunes = futilPrunes = 0;
 
         _historyTable = new int[2, 7, 64];
 
@@ -87,7 +89,7 @@ public class MyBot : IChessBot
                 break;
         }
 
-        Console.WriteLine("Bot new: " + d + ", Failed prunes: " + failedPrunes + ", succes prunes: " + succedfullPrunes + ", searches: " + _searches);
+        Console.WriteLine("Bot new: " + d + ", Failed prunes: " + failedPrunes + ", succes prunes: " + succedfullPrunes + ", searches: " + _searches + ", futil prunes: " + futilPrunes);
         //Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, time left: " + timer.MillisecondsRemaining);
 
         return _rootMove;
@@ -113,7 +115,7 @@ public class MyBot : IChessBot
 
         int currentEvaluation = Eval(), white = _board.IsWhiteToMove ? 0 : 1;
         bool quiescenceSearch = depth <= 0;
-        bool inCheck = _board.IsInCheck(), futilityPrune = false;
+        bool inCheck = _board.IsInCheck();
 
         if (quiescenceSearch)
         {
@@ -122,23 +124,28 @@ public class MyBot : IChessBot
 
             alpha = Math.Max(alpha, currentEvaluation);
         }
-        else if (!inCheck && !pvMove)
+        else if (!inCheck && !quiescenceSearch && depth < 9)
         {
-            //if (currentEvaluation - 85 * depth >= beta) 
-            //    return currentEvaluation - 85 * depth;
+            if (currentEvaluation - 150 * depth >= beta)
+            {
+                futilPrunes++;
+                return currentEvaluation - 150 * depth;
+            }
+                
 
             //if (doNull && depth >= 2)
             //{
             //    _board.TrySkipTurn();
             //    int score = -Search(ply + 1, depth - 3 - depth / 6,  -beta, 1 - beta, false, false);
             //    _board.UndoSkipTurn();
-
+            //
             //    if (score >= beta) 
             //        return score;
             //}
 
             //futilityPrune = depth <= 8 && currentEvaluation + 40 + 60 * depth <= alpha;
         }
+            
 
         //Check for depth and time
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
@@ -173,9 +180,8 @@ public class MyBot : IChessBot
         Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
         int bestEvaluation = -100000000;
         
-
         //Move ordering
-        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
+        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : _killerMoves[ply] == move ? 99999 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
         int startAlpha = alpha;
 
         //Loop through all available moves
@@ -198,7 +204,7 @@ public class MyBot : IChessBot
             //    evaluation = Search2(beta);
 
 
-            if (depth > 2 + (ply <= 1 ? 1 : 0) && i > 1 && !move.IsCapture && !move.IsPromotion)
+            if (depth > 1 + (ply <= 1 ? 1 : 0) && i > 1 && !move.IsCapture && !move.IsPromotion)
             {
                 int newDepth = Math.Clamp(depth - 2, 1, depth + 1);
 
@@ -264,8 +270,11 @@ public class MyBot : IChessBot
                 if (beta <= alpha)
                 {
                     if (!quiescenceSearch && !move.IsCapture)
+                    {
                         _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
-
+                        _killerMoves[ply] = move;
+                    }
+                    
                     break;
                 }
             }
