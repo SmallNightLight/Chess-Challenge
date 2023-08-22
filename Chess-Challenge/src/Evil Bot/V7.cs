@@ -2,7 +2,7 @@
 using System;
 using System.Linq;
 
-public class V6 : IChessBot
+public class V7 : IChessBot
 {
     // Define globals to save tokens
     Board board;
@@ -122,7 +122,7 @@ public class V6 : IChessBot
         }
 
         // Fix stack overflow issue
-        if (ply > 100) 
+        if (ply > 100)
             return best_score;
 
         // Move Ordering
@@ -144,15 +144,17 @@ public class V6 : IChessBot
             if (can_futility_prune && !tactical && i > 0) continue;
 
             board.MakeMove(move);
-            // Using local method to simplify multiple similar calls to Negamax
-            int Search(int next_alpha, int R = 1) => -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
-            // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
-            if (i == 0 || q_search) new_score = Search(beta);
-            else if ((new_score = tactical || i < 8 || depth < 3 ?
-                                    alpha + 1 :
-                                    Search(alpha + 1, 3)) > alpha &&
-                (new_score = Search(alpha + 1)) > alpha)
-                new_score = Search(beta);
+
+            new_score = -Negamax(depth - 1, ply + 1, -beta, -alpha, do_null);
+            //// Using local method to simplify multiple similar calls to Negamax
+            //int Search(int next_alpha, int R = 1) => -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
+            //// PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
+            //if (i == 0 || q_search) new_score = Search(beta);
+            //else if ((new_score = tactical || i < 8 || depth < 3 ?
+            //                        alpha + 1 :
+            //                        Search(alpha + 1, 3)) > alpha &&
+            //    (new_score = Search(alpha + 1)) > alpha)
+            //    new_score = Search(beta);
             board.UndoMove(move);
 
             if (new_score > best_score)
@@ -236,7 +238,7 @@ public class V6 : IChessBot
         return (middlegame * gamephase + endgame * (24 - gamephase)) / 24 * (board.IsWhiteToMove ? 1 : -1);
     }
 
-    public V6()
+    public V7()
     {
         // Precompute PSTs
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>

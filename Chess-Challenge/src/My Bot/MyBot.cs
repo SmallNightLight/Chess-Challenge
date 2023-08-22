@@ -1,8 +1,6 @@
 ﻿using ChessChallenge.API;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
 
 public class MyBot : IChessBot
 {
@@ -48,8 +46,12 @@ public class MyBot : IChessBot
 
     private int _searches = 0;
 
+    IChessBot other = new V7();
+
     public Move Think(Board board, Timer timer)
     {
+        //return other.Think(board, timer);
+
         _searches = 0;
 
         _historyTable = new int[2, 7, 64];
@@ -90,6 +92,8 @@ public class MyBot : IChessBot
 
     private int Search(int ply, int depth, int alpha, int beta, bool extension)
     {
+        bool pvMove = beta - alpha > 1;
+
         _searches++;
 
         if (ply != 0 && _board.IsRepeatedPosition())
@@ -106,6 +110,7 @@ public class MyBot : IChessBot
 
         int currentEvaluation = Eval(), white = _board.IsWhiteToMove ? 0 : 1;
         bool quiescenceSearch = depth <= 0;
+        bool inCheck = _board.IsInCheck(), futilityPrune = false;
 
         if (quiescenceSearch)
         {
@@ -114,38 +119,50 @@ public class MyBot : IChessBot
 
             alpha = Math.Max(alpha, currentEvaluation);
         }
+        else if (!inCheck && !pvMove)
+        {
+            //if (currentEvaluation - 85 * depth >= beta) 
+            //    return currentEvaluation - 85 * depth;
+
+            //if (doNull && depth >= 2)
+            //{
+            //    _board.TrySkipTurn();
+            //    int score = -Search(ply + 1, depth - 3 - depth / 6,  -beta, 1 - beta, false, false);
+            //    _board.UndoSkipTurn();
+
+            //    if (score >= beta) 
+            //        return score;
+            //}
+
+            //futilityPrune = depth <= 8 && currentEvaluation + 40 + 60 * depth <= alpha;
+        }
 
         //Check for depth and time
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
             return currentEvaluation;
 
-        bool inCheck = _board.IsInCheck();
-
         /**
         //decide about limited razoring at the pre-pre-frontier nodes
-        int fscore = currentEvaluation + razor_margin;
-        if (!extend && (depth == 3) && (fscore <= alpha))
+        int fscore = currentEvaluation + 100;
+        if (!extension && (depth == 3) && (fscore <= alpha))
         {
-            prune = true;
-            score = fmax = fscore;
+            futilityPrune = true;
         }
 
         //decide about extended futility pruning at pre-frontier nodes
-        fscore = currentEvaluation + extd_futil_margin;
+        fscore = currentEvaluation + 300;
 
-        if (!extend && (depth == 2) && (fscore <= alpha))
+        if (!extension && (depth == 2) && (fscore <= alpha))
         {
-            prune = true;
-            score = fmax = fscore;
+            futilityPrune = true;
         }
 
         //decide about selective futility pruning at frontier nodes
-        fscore = currentEvaluation + futil_margin;
+        fscore = currentEvaluation + 800;
 
         if (!inCheck && (depth == 1) && (fscore <= alpha))
         {
-            prune = true;
-            score = fmax = fscore;
+            futilityPrune = true;
         }
         /**/
 
@@ -159,11 +176,52 @@ public class MyBot : IChessBot
         int startAlpha = alpha;
 
         //Loop through all available moves
-        foreach (Move move in moves)
+        for (int i = 0, evaluation = 0; i < moves.Length; i++)
         {
+            Move move = moves[i];
+
             _board.MakeMove(move);
-            int rank = move.TargetSquare.Rank;
-            int evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, _board.IsInCheck()); //  || (move.CapturePieceType == PieceType.Pawn && (rank == 1 || rank == 6)
+
+            bool check = _board.IsInCheck();
+            bool tactical = move.IsCapture || move.IsPromotion;
+
+            // Using local method to simplify multiple similar calls to Negamax
+            int Search2(int next_alpha, int R = 1) => -Search(ply + 1, depth - R, -next_alpha, -alpha, check);
+
+            // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
+            if (i == 0 || quiescenceSearch) 
+                evaluation = Search2(beta);
+            else if ((evaluation = tactical || i < 8 || depth < 3 ? alpha + 1 : Search2(alpha + 1, 2)) > alpha && (evaluation = Search2(alpha + 1)) > alpha)
+                evaluation = Search2(beta);
+
+            //bool interestingMove = pvMove || move.IsCapture || move.IsPromotion || move == transpositionMove;
+
+            //if (futilityPrune && !interestingMove) 
+            //    continue;
+
+            //if (i == 0) //move == transpositionMove || quiescenceSearch
+            //    evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, check, doNull);
+            //else
+            //{
+            //    evaluation = -Search(ply + 1, depth - 1, -alpha - 1, -alpha, check, doNull);
+
+            //    if (evaluation > alpha && evaluation < beta)
+            //        evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, check, doNull);
+            //}
+            
+            //else if (depth >= 3 && !interestingMove)
+            //{
+            //    int r = 1;
+            //    if (depth >= 6)
+            //        r = 2;
+            //
+            //    evaluation = -Search(ply + 1, depth - 1 - r, -alpha - 1, -alpha, check);
+            //
+            //    if (evaluation > alpha && evaluation < beta)
+            //        evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, check);
+            //}
+            //else
+            //    evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, check);
 
             _board.UndoMove(move);
 
@@ -182,7 +240,7 @@ public class MyBot : IChessBot
                 //Check if can cut-off
                 if (beta <= alpha)
                 {
-                    if (!quiescenceSearch && !move.IsCapture) 
+                    if (!quiescenceSearch && !move.IsCapture)
                         _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
 
                     break;
