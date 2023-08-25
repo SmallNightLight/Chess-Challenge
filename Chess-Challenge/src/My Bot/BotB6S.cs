@@ -89,7 +89,7 @@ public class BotB6S : IChessBot
                 break;
         }
 
-        Console.WriteLine("Bot new: " + d + ", Failed prunes: " + failedPrunes + ", succes prunes: " + succedfullPrunes + ", searches: " + _searches + ", futil prunes: " + futilPrunes);
+        Console.WriteLine("Bot B6S: " + d + ", Failed prunes: " + failedPrunes + ", succes prunes: " + succedfullPrunes + ", searches: " + _searches + ", futil prunes: " + futilPrunes);
         //Console.WriteLine("BotB1C finished at depth: " + searchDepth + " in: " + timer.MillisecondsElapsedThisTurn + " milliseconds, time left: " + timer.MillisecondsRemaining);
 
         return _rootMove;
