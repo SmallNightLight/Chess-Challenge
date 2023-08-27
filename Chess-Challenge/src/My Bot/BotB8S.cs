@@ -16,7 +16,6 @@ public class BotB8S : IChessBot
 
     private (ulong, short, sbyte, Move, int)[] _transpositionTable = new (ulong, short, sbyte, Move, int)[0x800000];
     private int[,,] _historyTable;
-    private Move[] _killerMoves = new Move[512];
 
     //Value of pieces (early game -> end game)
     private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000 };
@@ -45,56 +44,37 @@ public class BotB8S : IChessBot
         }).ToArray();
     }
 
-    private int _searches = 0;
-    private int failedPrunes;
-    private int succedfullPrunes;
-    private int nullPrunes;
-
     public Move Think(Board board, Timer timer)
     {
-        _searches = failedPrunes = succedfullPrunes = nullPrunes = 0;
-
         _historyTable = new int[2, 7, 64];
 
         _board = board;
         _timer = timer;
 
-        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 25, timer.IncrementMilliseconds + (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 65f);
+        _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 28, timer.IncrementMilliseconds + (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 72f);
 
-        int d = 0;
-
-        for (int depth = 0; depth < 300;)
+        for (int depth = 0; ;)
         {
-            int evaluation = Search(0, ++depth, -10000, 10000, true);
+            int evaluation = Search(-1, ++depth, -10000, 10000, true);
 
             if (evaluation > 100000)
             {
                 _rootMove = _mainMove;
-                d++;
                 break;
             }
 
             if (timer.MillisecondsElapsedThisTurn < _timeThisTurn)
-            {
-                d++;
                 _rootMove = _mainMove;
-            }
             else
                 break;
         }
 
-        Console.WriteLine("Bot B8S: " + d + ", Failed prunes: " + failedPrunes + ", succes prunes: " + succedfullPrunes + ", searches: " + _searches + ", Null prunes: " + nullPrunes);
- 
         return _rootMove;
     }
 
     private int Search(int ply, int depth, int alpha, int beta, bool nullMove)
     {
-        bool pvMove = beta - alpha > 1;
-
-        _searches++;
-
-        if (ply != 0 && _board.IsRepeatedPosition())
+        if (++ply != 0 && _board.IsRepeatedPosition())
             return 0;
 
         if (_board.IsInCheck())
@@ -106,9 +86,8 @@ public class BotB8S : IChessBot
         if (transposition.Item1 == _board.ZobristKey && ply != 0 && transposition.Item3 >= depth && (transposition.Item5 == 1 || (transposition.Item5 == 0 && transposition.Item2 <= alpha) || (transposition.Item5 == 2 && transposition.Item2 >= beta)))
             return transposition.Item2;
 
-        int currentEvaluation = Eval(), white = _board.IsWhiteToMove ? 0 : 1;
-        bool quiescenceSearch = depth <= 0;
-        bool inCheck = _board.IsInCheck();
+        int currentEvaluation = Eval(), white = _board.IsWhiteToMove ? 0 : 1, startAlpha = alpha, evaluation = 0;
+        bool quiescenceSearch = depth <= 0, inCheck = _board.IsInCheck();
 
         if (quiescenceSearch)
         {
@@ -119,64 +98,56 @@ public class BotB8S : IChessBot
         }
         else if (!inCheck)
         {
-            if (depth < 4 && currentEvaluation - 85 * depth >= beta)
-                return currentEvaluation - 85 * depth;
+            int factor = currentEvaluation - 85 * depth;
+
+            if (depth < 4 && factor >= beta)
+                return factor;
 
             if (nullMove && depth > 1 && ply < 60)
             {
                 _board.TrySkipTurn();
-                int score = -Search(ply + 1, depth - 3 - depth / 6, -beta, -beta + 1, false);
+                int score = -Search(ply, depth - 2 - depth / 6, -beta, -beta + 1, false);
                 _board.UndoSkipTurn();
 
                 if (score >= beta)
-                {
-                    nullPrunes++;
                     return score;
-                }
             }
-
-            //prune = depth < 3 && currentEvaluation + 400 * depth <= alpha;
-            //futilityPrune = depth <= 8 && currentEvaluation + 40 + 60 * depth <= alpha;
         }
+
 
         //Check for depth and time
         if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn || depth <= -4)
             return currentEvaluation;
 
+
         //Initialize for new searches
         Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
         int bestEvaluation = -100000000;
 
-        //Move ordering
         var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
-        int startAlpha = alpha;
+
+        bool notFirstMove = false;
 
         //Loop through all available moves
-        for (int i = 0, evaluation = 0; i < moves.Length; i++)
+        foreach (Move move in moves)
         {
-            Move move = moves[i];
-
-            bool check = _board.IsInCheck();
-            bool tactical = move.IsCapture || move.IsPromotion;
+            if (currentEvaluation + 1150 < alpha && ply < 60 && !move.IsPromotion)
+                continue;
 
             _board.MakeMove(move);
 
-            if (depth > 1 + (ply <= 1 ? 1 : 0) && i > 1 && !move.IsCapture && !move.IsPromotion)
-            {
-                int newDepth = Math.Max(depth - 2, 0);
+            bool pruneSearach = depth > 1 + (ply <= 1 ? 1 : 0) && notFirstMove && !move.IsCapture && !move.IsPromotion;
 
-                evaluation = -Search(ply + 1, newDepth, -alpha - 1, -alpha, nullMove);
+            if (pruneSearach)
+            {
+                evaluation = -Search(ply, Math.Max(depth - 2, 0), -alpha - 1, -alpha, nullMove);
 
                 if (evaluation > alpha)
-                {
-                    evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, nullMove);
-                    failedPrunes++;
-                }
-                else
-                    succedfullPrunes++;
+                    pruneSearach = false;
             }
-            else
-                evaluation = -Search(ply + 1, depth - 1, -beta, -alpha, nullMove);
+
+            if (!pruneSearach)
+                evaluation = -Search(ply, depth - 1, -beta, -alpha, nullMove);
 
             _board.UndoMove(move);
 
@@ -196,14 +167,13 @@ public class BotB8S : IChessBot
                 if (beta <= alpha)
                 {
                     if (!quiescenceSearch && !move.IsCapture)
-                    {
                         _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
-                        _killerMoves[ply] = move;
-                    }
 
                     break;
                 }
             }
+
+            notFirstMove = true;
         }
 
         if (!quiescenceSearch && moves.Length == 0)
