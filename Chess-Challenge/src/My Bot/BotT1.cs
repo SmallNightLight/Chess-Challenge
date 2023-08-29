@@ -2,7 +2,7 @@
 using System;
 using System.Linq;
 
-public class MyBot : IChessBot
+public class BotT1 : IChessBot
 {
     //Temp variables
     private Board _board;
@@ -18,7 +18,7 @@ public class MyBot : IChessBot
     private int[,,] _historyTable;
 
     //Value of pieces (early game -> end game)
-    private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000};
+    private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000 };
 
     private int[] _pieceWeight = { 0, 1, 1, 2, 4, 0 };
 
@@ -35,7 +35,7 @@ public class MyBot : IChessBot
 
     private readonly int[][] UnpackedPestoTables = new int[64][];
 
-    public MyBot()
+    public BotT1()
     {
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
@@ -55,7 +55,7 @@ public class MyBot : IChessBot
 
         for (int depth = 0; ;)
         {
-            int evaluation = Search(-1, ++depth, -10000, 10000, true);
+            int evaluation = Negamax(++depth, 0, -100000, 100000, true);
 
             if (evaluation > 10000)
             {
@@ -72,114 +72,122 @@ public class MyBot : IChessBot
         return _rootMove;
     }
 
-    private int Search(int ply, int depth, int alpha, int beta, bool nullMove)
+    private int Negamax(int depth, int ply, int alpha, int beta, bool do_null)
     {
-        if (++ply != 0 && _board.IsRepeatedPosition())
+        if (ply != 0 && _board.IsRepeatedPosition())
             return 0;
 
-        if (_board.IsInCheck())
+        bool quiescenceSearch = depth <= 0, in_check = _board.IsInCheck(), pv_node = beta - alpha > 1, can_futility_prune = false;
+        int best_score = -200000, turn = _board.IsWhiteToMove ? 1 : 0;
+        ulong key = _board.ZobristKey;
+
+        if (in_check) 
             depth++;
 
-        //Transpositions
         ref var transposition = ref _transpositionTable[_board.ZobristKey & 0x7FFFFF];
 
         if (transposition.Item1 == _board.ZobristKey && ply != 0 && transposition.Item3 >= depth && (transposition.Item5 == 1 || (transposition.Item5 == 0 && transposition.Item2 <= alpha) || (transposition.Item5 == 2 && transposition.Item2 >= beta)))
             return transposition.Item2;
 
-        int currentEvaluation = Eval(), bestEvaluation = -100000000, white = _board.IsWhiteToMove ? 0 : 1, startAlpha = alpha, evaluation = 0;
-        bool quiescenceSearch = depth <= 0, inCheck = _board.IsInCheck(), notFirstMove = false;
+        int currentScore = Eval();
 
+        //Delta Pruning
         if (quiescenceSearch)
         {
-            bestEvaluation = currentEvaluation;
+            best_score = currentScore;
 
-            if (currentEvaluation >= beta) 
+            if (best_score >= beta) 
                 return beta;
 
-            alpha = Math.Max(alpha, currentEvaluation);
+            alpha = Math.Max(alpha, best_score);
         }
-        else if (!inCheck)
+        else if (!pv_node && !in_check)
         {
-            int factor = currentEvaluation - 85 * depth;
+            //Reverse Futility Pruning
+            int factor = currentScore - 85 * depth;
 
-            if (depth < 4 && factor >= beta)
+            if (factor >= beta) 
                 return factor;
 
-            if (nullMove && depth > 1 && ply < 60)
+            // Null Move Pruning
+            if (do_null && depth >= 2)
             {
                 _board.TrySkipTurn();
-                int score = -Search(ply, depth - 2 - depth / 6,  -beta, -beta + 1, false);
+                int score = -Negamax(depth - 3 - depth / 6, ply + 1, -beta, 1 - beta, false);
                 _board.UndoSkipTurn();
 
-                if (score >= beta)
+                if (score >= beta) 
                     return score;
             }
+
+            // Futility Pruning Check
+            can_futility_prune = depth <= 8 && currentScore + 40 + 60 * depth <= alpha;
         }
 
-        //Initialize for new searches
-        Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
-        
-        var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
+        Move transpositionMove = transposition.Item4;
 
-        //Loop through all available moves
-        foreach(Move move in moves)
+        // Move Ordering
+        Move[] moves = _board.GetLegalMoves(quiescenceSearch && !in_check).OrderByDescending(
+            move =>
+                move == transpositionMove ? 1000000 :
+                move.IsCapture ? 1000 * (int)move.CapturePieceType - (int)move.MovePieceType :
+                _historyTable[turn, (int)move.MovePieceType, move.TargetSquare.Index]
+        ).ToArray();
+
+        Move best_move = Move.NullMove;
+        int start_alpha = alpha;
+        for (int i = 0, new_score = 0; i < moves.Length; i++)
         {
-            if (currentEvaluation + 1150 < alpha && ply < 60 && !move.IsPromotion)
+            Move move = moves[i];
+
+            bool tactical = pv_node || move.IsCapture || move.IsPromotion || in_check;
+
+            // Futility Pruning
+            if (can_futility_prune && !tactical && i > 0) 
                 continue;
 
             _board.MakeMove(move);
-
-            bool pruneSearach = depth > 1 + (ply <= 1 ? 1 : 0) && notFirstMove && !move.IsCapture && !move.IsPromotion;
-
-            if (pruneSearach)
-            {
-                evaluation = -Search(ply, Math.Max(depth - 2, 0), -alpha - 1, -alpha, nullMove);
-
-                if (evaluation > alpha)
-                    pruneSearach = false;
-            }
-
-            if (!pruneSearach)
-                evaluation = -Search(ply, depth - 1, -beta, -alpha, nullMove);
-
+            // Using local method to simplify multiple similar calls to Negamax
+            int Search(int next_alpha, int R = 1) => -Negamax(depth - R, ply + 1, -next_alpha, -alpha, do_null);
+            // PVS + LMR (Saves tokens, I will not explain, ask Tyrant)
+            if (i == 0 || quiescenceSearch) new_score = Search(beta);
+            else if ((new_score = tactical || i < 8 || depth < 3 ?
+                                    alpha + 1 :
+                                    Search(alpha + 1, 3)) > alpha &&
+                (new_score = Search(alpha + 1)) > alpha)
+                new_score = Search(beta);
             _board.UndoMove(move);
 
-
-            //Set best move
-            if (evaluation > bestEvaluation)
+            if (new_score > best_score)
             {
-                bestMove = move;
-                bestEvaluation = evaluation;
+                best_score = new_score;
+                best_move = move;
 
-                if (ply == 0)
+                // Update bestmove
+                if (ply == 0) 
                     _mainMove = move;
 
-                //Set alpha
-                alpha = Math.Max(alpha, bestEvaluation);
-
-                //Check if can cut-off
-                if (beta <= alpha)
+                // Improve alpha
+                alpha = Math.Max(alpha, best_score);
+                // Beta Cutoff
+                if (alpha >= beta)
                 {
-                    if (!quiescenceSearch && !move.IsCapture)
-                        _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
-                    
-                    break;
+                    if (!quiescenceSearch && !move.IsCapture) _historyTable[turn, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
+                        break;
                 }
             }
 
-            notFirstMove = true;
-
-            if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn) 
+            // Check if time is expired
+            if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn)
                 return 200000;
         }
-
+        // If there are no moves return either checkmate or draw
         if (!quiescenceSearch && moves.Length == 0) 
-            bestEvaluation = inCheck ? ply - 100000 : 0;
+            return in_check ? ply - 100000 : 0;
 
-        if (!quiescenceSearch)
-            transposition = (_board.ZobristKey, (short)bestEvaluation, (sbyte)depth, bestMove, bestEvaluation >= beta ? 2 : bestEvaluation > startAlpha ? 1 : 0);
+        transposition = (key, (short)best_score, (sbyte)depth, best_move, best_score >= beta ? 2 : best_score > start_alpha ? 1 : 0);
 
-        return bestEvaluation;
+        return best_score;
     }
 
     private int Eval()
@@ -199,7 +207,7 @@ public class MyBot : IChessBot
                     middlegame += UnpackedPestoTables[square][piece];
                     endgame += UnpackedPestoTables[square][piece + 6];
 
-                    //Bishop pair bonus
+                    // Bishop pair bonus
                     if (piece == 2 && mask != 0)
                     {
                         middlegame += 22;
