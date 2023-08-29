@@ -8,7 +8,6 @@ public class MyBot : IChessBot
     private Board _board;
 
     private Move _mainMove;
-    private Move _rootMove;
 
     //Other Variables
     private Timer _timer;
@@ -54,22 +53,10 @@ public class MyBot : IChessBot
         _timeThisTurn = Math.Min(timer.MillisecondsRemaining / 28, timer.IncrementMilliseconds + (0.6f + (0.04f * Math.Min(board.PlyCount, 15))) * timer.GameStartTimeMilliseconds / 72f);
 
         for (int depth = 0; ;)
-        {
-            int evaluation = Search(-1, ++depth, -10000, 10000, true);
-
-            if (evaluation > 10000)
-            {
-                _rootMove = _mainMove;
+            if (Search(-1, ++depth, -10000, 10000, true) > 10000 || _timer.MillisecondsElapsedThisTurn > _timeThisTurn)
                 break;
-            }
 
-            if (timer.MillisecondsElapsedThisTurn < _timeThisTurn)
-                _rootMove = _mainMove;
-            else
-                break;
-        }
-
-        return _rootMove;
+        return _mainMove;
     }
 
     private int Search(int ply, int depth, int alpha, int beta, bool nullMove)
@@ -93,7 +80,7 @@ public class MyBot : IChessBot
         {
             bestEvaluation = currentEvaluation;
 
-            if (currentEvaluation >= beta) 
+            if (currentEvaluation >= beta)
                 return beta;
 
             alpha = Math.Max(alpha, currentEvaluation);
@@ -108,7 +95,7 @@ public class MyBot : IChessBot
             if (nullMove && depth > 1 && ply < 60)
             {
                 _board.TrySkipTurn();
-                int score = -Search(ply, depth - 2 - depth / 6,  -beta, -beta + 1, false);
+                int score = -Search(ply, depth - 2 - depth / 6, -beta, -beta + 1, false);
                 _board.UndoSkipTurn();
 
                 if (score >= beta)
@@ -118,11 +105,11 @@ public class MyBot : IChessBot
 
         //Initialize for new searches
         Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
-        
+
         var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
 
         //Loop through all available moves
-        foreach(Move move in moves)
+        foreach (Move move in moves)
         {
             if (currentEvaluation + 1150 < alpha && ply < 60 && !move.IsPromotion)
                 continue;
@@ -144,7 +131,6 @@ public class MyBot : IChessBot
 
             _board.UndoMove(move);
 
-
             //Set best move
             if (evaluation > bestEvaluation)
             {
@@ -162,18 +148,18 @@ public class MyBot : IChessBot
                 {
                     if (!quiescenceSearch && !move.IsCapture)
                         _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
-                    
+
                     break;
                 }
             }
 
             notFirstMove = true;
 
-            if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn) 
+            if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn)
                 return 200000;
         }
 
-        if (!quiescenceSearch && moves.Length == 0) 
+        if (!quiescenceSearch && moves.Length == 0)
             bestEvaluation = inCheck ? ply - 100000 : 0;
 
         if (!quiescenceSearch)
