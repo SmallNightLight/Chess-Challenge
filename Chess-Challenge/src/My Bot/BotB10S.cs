@@ -67,6 +67,8 @@ public class BotB10S : IChessBot
         if (_board.IsInCheck())
             depth++;
 
+        bool pv_node = beta - alpha > 1;
+
         //Transpositions
         ref var transposition = ref _transpositionTable[_board.ZobristKey & 0x7FFFFF];
 
@@ -74,7 +76,7 @@ public class BotB10S : IChessBot
             return transposition.Item2;
 
         int currentEvaluation = Eval(), bestEvaluation = -100000000, white = _board.IsWhiteToMove ? 0 : 1, startAlpha = alpha, evaluation = 0;
-        bool quiescenceSearch = depth <= 0, inCheck = _board.IsInCheck(), notFirstMove = false;
+        bool quiescenceSearch = depth <= 0, inCheck = _board.IsInCheck(), notFirstMove = false, canFutilityPrune = false;
 
         if (quiescenceSearch)
         {
@@ -101,6 +103,8 @@ public class BotB10S : IChessBot
                 if (score >= beta)
                     return score;
             }
+
+            canFutilityPrune = depth <= 8 && currentEvaluation + 40 + 60 * depth <= alpha;
         }
 
         //Initialize for new searches
@@ -108,10 +112,14 @@ public class BotB10S : IChessBot
 
         var moves = _board.GetLegalMoves(quiescenceSearch).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
 
+        int i = 0;
         //Loop through all available moves
         foreach (Move move in moves)
         {
-            if (currentEvaluation + 1150 < alpha && ply < 60 && !move.IsPromotion)
+            bool tactical = pv_node || move.IsCapture || move.IsPromotion || inCheck;
+
+            //Futility Pruning
+            if (canFutilityPrune && !tactical && i > 0)
                 continue;
 
             _board.MakeMove(move);
@@ -157,6 +165,8 @@ public class BotB10S : IChessBot
 
             if (_timer.MillisecondsElapsedThisTurn > _timeThisTurn)
                 return 200000;
+
+            i++;
         }
 
         if (!quiescenceSearch && moves.Length == 0)

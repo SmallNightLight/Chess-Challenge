@@ -111,12 +111,15 @@ public class MyBot : IChessBot
         //Loop through all available moves
         foreach (Move move in moves)
         {
-            if (currentEvaluation + 1150 < alpha && ply < 60 && !move.IsPromotion)
+            bool tactical = move.IsCapture || move.IsPromotion || !notFirstMove;
+
+            //Futility Pruning
+            if (depth <= 8 && currentEvaluation + 40 + 60 * depth <= alpha && !tactical && !quiescenceSearch && !inCheck && beta - alpha <= 1) 
                 continue;
 
             _board.MakeMove(move);
 
-            bool pruneSearach = depth > 1 + (ply <= 1 ? 1 : 0) && notFirstMove && !move.IsCapture && !move.IsPromotion;
+            bool pruneSearach = depth > 1 + (ply <= 1 ? 1 : 0) && !tactical;
 
             if (pruneSearach)
             {

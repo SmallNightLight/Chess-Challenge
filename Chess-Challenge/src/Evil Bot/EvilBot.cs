@@ -5,7 +5,7 @@ namespace Chess_Challenge.src.Evil_Bot
 {
     public class EvilBot : IChessBot
     {
-        IChessBot _bot = new BotB10S();
+        IChessBot _bot = new V6();
 
         public Move Think(Board board, Timer timer)
         {
