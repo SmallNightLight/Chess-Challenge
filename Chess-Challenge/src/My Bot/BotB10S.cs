@@ -2,7 +2,7 @@
 using System;
 using System.Linq;
 
-public class MyBot : IChessBot
+public class BotB10S : IChessBot
 {
     //Temp variables
     private Board _board;
@@ -17,7 +17,7 @@ public class MyBot : IChessBot
     private int[,,] _historyTable;
 
     //Value of pieces (early game -> end game)
-    private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000};
+    private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000 };
 
     private int[] _pieceWeight = { 0, 1, 1, 2, 4, 0 };
 
@@ -34,7 +34,7 @@ public class MyBot : IChessBot
 
     private readonly int[][] UnpackedPestoTables = new int[64][];
 
-    public MyBot()
+    public BotB10S()
     {
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
@@ -148,7 +148,7 @@ public class MyBot : IChessBot
                 {
                     if (!quiescenceSearch && !move.IsCapture)
                         _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
-                        
+
                     break;
                 }
             }
