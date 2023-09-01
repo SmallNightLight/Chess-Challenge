@@ -173,28 +173,29 @@ public class MyBot : IChessBot
 
     private int Eval()
     {
-        int middlegame = 0, endgame = 0, gamephase = 0, sideToMove = 2;
+        int middlegame = -20, endgame = 0, gamephase = 0, sideToMove = 2;
 
         for (; --sideToMove >= 0;)
         {
-            for (int piece = -1, square; ++piece < 6;)
+            for (int piece = -1; ++piece < 6;)
                 for (ulong mask = _board.GetPieceBitboard((PieceType)piece + 1, sideToMove > 0); mask != 0;)
                 {
-                    //Gamephase, middlegame -> endgame
+                    //Increase gamephase
                     gamephase += _pieceWeight[piece];
 
-                    //Material and square evaluation
-                    square = BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ 56 * sideToMove;
-                    middlegame += UnpackedPestoTables[square][piece];
-                    endgame += UnpackedPestoTables[square][piece + 6];
-
                     //Bishop pair bonus
-                    if (piece == 2 && mask != 0)
+                    if (piece == 2)
                     {
                         middlegame += 22;
                         endgame += 30;
                     }
+
+                    //Material and square evaluation
+                    int square = BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ 56 * sideToMove;
+                    middlegame += UnpackedPestoTables[square][piece];
+                    endgame += UnpackedPestoTables[square][piece + 6];
                 }
+
             middlegame = -middlegame;
             endgame = -endgame;
         }
