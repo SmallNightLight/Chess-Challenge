@@ -2,7 +2,7 @@
 using System;
 using System.Linq;
 
-public class MyBot : IChessBot
+public class BotB11S : IChessBot
 {
     //Temp variables
     private Board _board;
@@ -17,9 +17,7 @@ public class MyBot : IChessBot
     private int[,,] _historyTable;
 
     //Value of pieces (early game -> end game)
-    private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000};
-
-    private readonly short[] _basicPieceValue = { 0, 1, 3, 3, 5, 9, 7};
+    private readonly short[] _pieceValues = { 82, 337, 365, 497, 1025, 20000, 94, 281, 297, 512, 936, 20000 };
 
     private int[] _pieceWeight = { 0, 1, 1, 2, 4, 0 };
 
@@ -36,7 +34,7 @@ public class MyBot : IChessBot
 
     private readonly int[][] UnpackedPestoTables = new int[64][];
 
-    public MyBot()
+    public BotB11S()
     {
         UnpackedPestoTables = PackedPestoTables.Select(packedTable =>
         {
@@ -97,7 +95,7 @@ public class MyBot : IChessBot
             if (nullMove && depth > 1 && ply < 60)
             {
                 _board.TrySkipTurn();
-                int score = -Search(ply, depth - 2 - depth / 5, -beta, -beta + 1, false);
+                int score = -Search(ply, depth - 2 - depth / 6, -beta, -beta + 1, false);
                 _board.UndoSkipTurn();
 
                 if (score >= beta)
@@ -108,11 +106,7 @@ public class MyBot : IChessBot
         //Initialize for new searches
         Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
 
-        //better
-        var moves = _board.GetLegalMoves(quiescenceSearch && !inCheck).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 500 * (_basicPieceValue[(int)move.CapturePieceType] + _basicPieceValue[(int)move.PromotionPieceType]) - _basicPieceValue[(int)move.MovePieceType] : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray(); // - (_board.SquareIsAttackedByOpponent(move.TargetSquare) ? (int)move.MovePieceType * 0 : 0)
-        
-        //var moves = _board.GetLegalMoves(quiescenceSearch && !inCheck).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
-
+        var moves = _board.GetLegalMoves(quiescenceSearch && !inCheck).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
 
         //Loop through all available moves
         foreach (Move move in moves)
@@ -120,7 +114,7 @@ public class MyBot : IChessBot
             bool tactical = move.IsCapture || move.IsPromotion || !notFirstMove;
 
             //Futility Pruning
-            if (depth <= 8 && currentEvaluation + 40 + 60 * depth <= alpha && !tactical && !quiescenceSearch && !inCheck && beta - alpha <= 1) 
+            if (depth <= 8 && currentEvaluation + 40 + 60 * depth <= alpha && !tactical && !quiescenceSearch && !inCheck && beta - alpha <= 1)
                 continue;
 
             _board.MakeMove(move);
@@ -157,7 +151,7 @@ public class MyBot : IChessBot
                 {
                     if (!quiescenceSearch && !move.IsCapture)
                         _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index] += depth * depth;
-                        
+
                     break;
                 }
             }
@@ -179,7 +173,7 @@ public class MyBot : IChessBot
 
     private int Eval()
     {
-        int middlegame = -30, endgame = 0, gamephase = 0, sideToMove = 2;
+        int middlegame = -20, endgame = 0, gamephase = 0, sideToMove = 2;
 
         for (; --sideToMove >= 0;)
         {

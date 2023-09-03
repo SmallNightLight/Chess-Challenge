@@ -1,0 +1,30 @@
+200 games - 1s
+
+A)  -1000, 100: 58w,
+B) -500, 100: 65w, 69d, 66l
+C) -100, 100: 48w, 59d, 93l
+D) -400, 0: 65w 60d 75l
+E) basic piece value -1, 0: 56w 67d 77l
+F) basic piece value -0.5, 0: 66w, 59d, 75l
+G) only for non capture 0.5, 0: 60w 69d 71l
+H) only for non capture 2, 0: 107w 76d 71l (257 games)
+I) only for non capture 1, 0: 60w 62d 78l
+J) in captures 1, 0: 315: +11 +basic
+K) in captues 0.5, 0: 250 +12 +basic
+J) in c 1000 0: -5 150g
+L) in c 500 0: 315g +20
+
+Against V6)
+
+1) standard: 200g 55d -13
+2) standdard: 200g 65w 47d 88l -> -23
+
+ var moves = _board.GetLegalMoves(quiescenceSearch && !inCheck).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * (_basicPieceValue[(int)move.CapturePieceType] + _basicPieceValue[(int)move.PromotionPieceType]) - _basicPieceValue[(int)move.MovePieceType] + (_board.SquareIsAttackedByOpponent(move.TargetSquare) ? 0 : 100) : (_historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index])).ToArray(); // - (_board.SquareIsAttackedByOpponent(move.TargetSquare) ? (int)move.MovePieceType * 0 : 0) 
+       
+-> 200g 43d -8
+
+n 63 54 83 -> -20
+n with 500: 69 48 83 -> -14
+n 100: 64 53 83 -> -19
+n 500 56 66 78 -> -22
+
