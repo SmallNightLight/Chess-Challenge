@@ -108,12 +108,9 @@ public class MyBot : IChessBot
         //Initialize for new searches
         Move bestMove = Move.NullMove, transpositionMove = transposition.Item4;
 
-        //better
-        var moves = _board.GetLegalMoves(quiescenceSearch && !inCheck).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 500 * (_basicPieceValue[(int)move.CapturePieceType] + _basicPieceValue[(int)move.PromotionPieceType]) - _basicPieceValue[(int)move.MovePieceType] : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray(); // - (_board.SquareIsAttackedByOpponent(move.TargetSquare) ? (int)move.MovePieceType * 0 : 0)
+        //Order moves
+        var moves = _board.GetLegalMoves(quiescenceSearch && !inCheck).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 500 * (_basicPieceValue[(int)move.CapturePieceType] + _basicPieceValue[(int)move.PromotionPieceType]) - _basicPieceValue[(int)move.MovePieceType] : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
         
-        //var moves = _board.GetLegalMoves(quiescenceSearch && !inCheck).OrderByDescending(move => move == transpositionMove ? 100000 : move.IsCapture ? 1000 * ((int)move.CapturePieceType + (int)move.PromotionPieceType) - (int)move.MovePieceType : _historyTable[white, (int)move.MovePieceType, move.TargetSquare.Index]).ToArray();
-
-
         //Loop through all available moves
         foreach (Move move in moves)
         {
