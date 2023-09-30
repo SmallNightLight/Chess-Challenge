@@ -1,0 +1,11 @@
+
+chaotic Ko-op game like overcooked
+Trash Patrol
+
+
+Top down PvP game where players have abilities to attack each other and abilities to change the terrain (like adding walls or other structures).  When somebody dies, another round starts but now with the old modified terrain. Chaotic game! 
+-> Maybe an entire planet with the campaign of climate change
+
+campaign: 
+
+SIRE, Ad countil, united nations
